@@ -4,7 +4,7 @@
 
 ---
 
-## 📂 리포지토리 파일 구성
+## 리포지토리 파일 구성
 
 기존에 보유하고 계신 GECX(CXAS) 애플리케이션에 아래 2개의 파이썬 코드와 지침 가이드만 추가하면 바로 동작합니다.
 
@@ -16,7 +16,7 @@
 
 ---
 
-## 📌 개요: 고객 문의 배경과 핵심 해결책
+## 개요: 고객 문의 배경과 핵심 해결책
 
 ### 1. 고객 문의 사항 (Before)
 > *"GECX에서는 Instruction만으로 파라미터(Variables)에 값을 바로 넣을 수 없고, 에이전트 콜백(Callback)에서 파이썬 코드로 넣어야 한다고 안내받았습니다. 그러면 `top_intent`를 분류하기 위해 파이썬 코드 안에 키워드(`if '요금' in text:`)를 일일이 넣어야 하나요? 키워드가 바뀔 때마다 코드를 계속 수정해야 하는지, 아니면 **Tool을 사용해서라도 LLM 기반으로 파라미터를 자동 추출하는 방법**이 있는지 궁금합니다."*
@@ -47,7 +47,7 @@ flowchart LR
 
 ---
 
-## 🛠️ Step 1. [기본] 세션 변수 선언 및 LLM 기반 자동 파라미터 추출
+## Step 1. [기본] 세션 변수 선언 및 LLM 기반 자동 파라미터 추출
 
 첫 번째 단계는 고객이 무엇을 물어보든 **키워드 규칙 없이 LLM이 문맥을 파악하여 `top_intent`와 `customer_inquiry`(4개 기본 필드)를 자동으로 채우는 과정**입니다.
 
@@ -63,7 +63,7 @@ GECX에서는 단일 문자열을 담는 **`Text` (`STRING`)** 타입과 여러 
 | **Instruction 참조** | `{top_intent}` | 전체: `{customer_inquiry}`<br>하위 필드: `{customer_inquiry.product_category}` |
 | **추천 용도** | 최상위 라우팅 분기 기준 등 단일 플래그를 빠르게 참조할 때 | 추출할 파라미터가 많아질 때 변수가 난립(Variable Explosion)하는 것을 막고 관련 정보를 하나로 묶어 관리할 때 |
 
-#### 💻 GECX 웹 콘솔(UI) 등록 방법
+#### GECX 웹 콘솔(UI) 등록 방법
 좌측 메뉴 **Variables** ➔ **+ Add variable**을 클릭하여 아래 2개 변수를 등록합니다.
 
 1. **`top_intent`**
@@ -137,7 +137,7 @@ def record_intent_and_parameters(
 
 ### 1-3. `Root agent` 지침(`instruction.txt`) 연결하기
 
-> **💡 자주 묻는 질문: 인텐트 분류 기준을 Instruction과 Tool에 둘 다 적어야 하나요?**
+> **자주 묻는 질문: 인텐트 분류 기준을 Instruction과 Tool에 둘 다 적어야 하나요?**
 > 아닙니다! LLM은 **Agent Instruction**과 **Tool의 Docstring(`Args:`)**을 동시에 읽습니다.
 > 따라서 **Tool Docstring에 상세 분류 기준**을 적어 두었다면, **Instruction에는 "가장 먼저 `record_intent_and_parameters`를 호출하고 결과에 따라 라우팅하라"**고만 간결하게 적으면 됩니다.
 
@@ -162,7 +162,7 @@ def record_intent_and_parameters(
 
 ---
 
-## 🔄 Step 2. [심화] Sub-Agent (`billing_agent`) 세션 변수 활용 및 양방향 호전환
+## Step 2. [심화] Sub-Agent (`billing_agent`) 세션 변수 활용 및 양방향 호전환
 
 두 번째 단계는 `Root agent`가 기록한 세션 변수(`{top_intent}`, `{customer_inquiry}`)를 서브 에이전트인 **`billing_agent`가 이어받아 활용하고, 대화 도중 주제가 바뀌면 다시 변수를 실시간 갱신하는 멀티턴 시나리오**입니다.
 
@@ -243,7 +243,7 @@ sequenceDiagram
 
 ---
 
-## 🚀 Step 3. [확장] 스키마 수정 없이 Tool에서 `context.state` 및 API 응답값 동적 병합 (`Merge`)
+## Step 3. [확장] 스키마 수정 없이 Tool에서 `context.state` 및 API 응답값 동적 병합 (`Merge`)
 
 세 번째 단계는 **"사전에 `app.json`에 선언해 둔 4개 필드 외에, 상담 도중 Tool에서 원하는 `context.state` 변수나 API로 받아온 결과값(청구서 총액 등)을 동적으로 `customer_inquiry`에 추가할 수 있는가?"**에 대한 구현 방법입니다.
 
@@ -353,7 +353,7 @@ _sync_inquiry_with_api_data(
 
 ---
 
-## 🔍 Step 4. 실시간 변수 확인 방법 & 실전 트러블슈팅 노하우
+## Step 4. 실시간 변수 확인 방법 & 실전 트러블슈팅 노하우
 
 ### 4-1. 실시간으로 변수 값을 확인하는 2가지 방법
 
