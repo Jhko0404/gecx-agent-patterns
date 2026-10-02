@@ -18,8 +18,8 @@
 
 ## 배경 및 아키텍처 패턴 개요
 
-### 1. 기존 접근 방식의 한계 (안티패턴: 콜백 내 키워드 하드코딩)
-DFCX(Playbooks)에서 GECX(CX Agent Studio)로 전환할 때 흔히 겪는 설계상의 오해는 **"Instruction만으로는 세션 변수(Variables)에 값을 직접 할당할 수 없으므로, 에이전트 콜백(Callback)에서 파이썬 조건문(`if '요금' in text:`)으로 키워드를 분기해 변수를 넣어야 한다"**고 접근하는 것입니다.
+### 1. 기존 접근 방식의 한계
+DFCX(Playbooks)에서 GECX(CX Agent Studio)로 전환할 때 흔히 겪는 설계상의 오해는 **Instruction만으로는 세션 변수(Variables)에 값을 직접 할당할 수 없으므로, 에이전트 콜백(Callback)에서 파이썬 조건문(`if '요금' in text:`)으로 키워드를 분기해 변수를 넣어야 한다**고 접근하는 것입니다.
 
 하지만 콜백 내부에 키워드 매칭 로직을 하드코딩하면 다음과 같은 한계가 발생합니다:
 * **유지보수 비용 증가**: 사용자 발화 표현이나 취급 품목·인텐트가 추가될 때마다 파이썬 코드를 지속적으로 수정·재배포해야 합니다.
@@ -34,9 +34,9 @@ DFCX(Playbooks)에서 GECX(CX Agent Studio)로 전환할 때 흔히 겪는 설�
 
 | 단계 | 목표 | 핵심 구현 내용 | 참고 코드 |
 | :--- | :--- | :--- | :--- |
-| **Step 1**<br>**(기본 추출)** | 사용자 발화에서 인텐트 및 핵심 파라미터 자동 추출 | • 단일 문자열 변수 `top_intent` (`Text`)<br>• 구조화 객체 변수 `customer_inquiry` (`Custom Schema` 기본 4필드)<br>• `record_intent_and_parameters` Tool로 문맥 기반 자동 기록 | [`record_intent_and_parameters.py`](./record_intent_and_parameters.py) |
-| **Step 2**<br>**(서브 에이전트 연동)** | `Root agent` ⇄ `billing_agent` 간 변수 공유 및 양방향 전환 | • 호전환 직후 고객에게 다시 묻지 않고 저장된 변수로 즉시 조회/처리<br>• 특정 제품(`"비데"`) 문의 시 파라미터 에러 방지 및 맞춤 안내<br>• 멀티턴 대화 중 주제 전환(`Card Payment` ⇄ `ASDefense` / `Transfer`) 시 실시간 변수 갱신 | 본 문서 Step 2 지침 예시 |
-| **Step 3**<br>**(무스키마 동적 확장)** | `app.json` 스키마 수정 없이 Tool에서 컨텍스트 & API 결과 동적 추가 | • 기존 `customer_inquiry`를 덮어쓰지 않고 병합(`Merge`)<br>• `context.state`의 고객 정보(`customer_name`, `account_id`, `auth_status`) 자동 추가<br>• API로 조회한 청구월(`billing_month`), 청구 총액(`invoice_total`), 납부기한(`payment_due`) 등 실시간 반영 | [`api_tool_dynamic_merge_example.py`](./api_tool_dynamic_merge_example.py) |
+| **Step&nbsp;1**<br>**(기본&nbsp;추출)** | 사용자 발화에서 인텐트 및 핵심 파라미터 자동 추출 | • 단일 문자열 변수 `top_intent` (`Text`)<br>• 구조화 객체 변수 `customer_inquiry` (`Custom Schema` 기본 4필드)<br>• `record_intent_and_parameters` Tool로 문맥 기반 자동 기록 | [추출&nbsp;Tool&nbsp;코드](./record_intent_and_parameters.py) |
+| **Step&nbsp;2**<br>**(서브&nbsp;에이전트&nbsp;연동)** | `Root agent` ⇄ `billing_agent`<br>변수 공유 및 양방향 전환 | • 호전환 직후 고객에게 다시 묻지 않고 저장된 변수로 즉시 조회/처리<br>• 특정 제품(`"비데"`) 문의 시 파라미터 에러 방지 및 맞춤 안내<br>• 멀티턴 대화 중 주제 전환(`Card Payment` ⇄ `ASDefense` / `Transfer`) 시 실시간 변수 갱신 | [Step&nbsp;2&nbsp;지침&nbsp;예시](#step-2-심화-sub-agent-billing_agent-세션-변수-활용-및-양방향-호전환) |
+| **Step&nbsp;3**<br>**(무스키마&nbsp;동적&nbsp;확장)** | `app.json` 스키마 수정 없이<br>컨텍스트 & API 결과 동적 추가 | • 기존 `customer_inquiry`를 덮어쓰지 않고 병합(`Merge`)<br>• `context.state`의 고객 정보(`customer_name`, `account_id`, `auth_status`) 자동 추가<br>• API로 조회한 청구월(`billing_month`), 청구 총액(`invoice_total`), 납부기한(`payment_due`) 등 실시간 반영 | [API&nbsp;병합&nbsp;예제](./api_tool_dynamic_merge_example.py) |
 
 ```mermaid
 flowchart LR
@@ -54,20 +54,21 @@ flowchart LR
 첫 번째 단계는 고객이 무엇을 물어보든 **키워드 규칙 없이 LLM이 문맥을 파악하여 `top_intent`와 `customer_inquiry`(4개 기본 필드)를 자동으로 채우는 과정**입니다.
 
 ### 1-1. 세션 변수(Variables) 등록 — `Text` vs `Custom Schema` 비교
+![Variables](Variables.png)
 
 GECX에서는 단일 문자열을 담는 **`Text` (`STRING`)** 타입과 여러 하위 필드를 하나의 JSON 객체로 묶어 관리하는 **`Custom Schema` (`OBJECT`)** 타입을 모두 지원합니다.
 
 | 구분 | 변수 ①: `top_intent` (`Text`) | 변수 ②: `customer_inquiry` (`Custom Schema`) |
 | :--- | :--- | :--- |
-| **데이터 타입** | `STRING` (단일 텍스트) | `OBJECT` (JSON 구조체) |
-| **저장 예시** | `"Card Payment"` | `{"intent": "Card Payment", "product_category": "비데", ...}` |
-| **Python 저장 코드** | `context.state["top_intent"] = top_intent` | `context.state["customer_inquiry"] = inquiry_data` |
-| **Instruction 참조** | `{top_intent}` | 전체: `{customer_inquiry}`<br>하위 필드: `{customer_inquiry.product_category}` |
-| **추천 용도** | 최상위 라우팅 분기 기준 등 단일 플래그를 빠르게 참조할 때 | 추출할 파라미터가 많아질 때 변수가 난립(Variable Explosion)하는 것을 막고 관련 정보를 하나로 묶어 관리할 때 |
+| **데이터&nbsp;타입** | `STRING` (단일 텍스트) | `OBJECT` (JSON 구조체) |
+| **저장&nbsp;예시** | `"Card Payment"` | `{"intent": "Card Payment", "product_category": "비데", ...}` |
+| **Python&nbsp;저장&nbsp;코드** | `context.state["top_intent"] = top_intent` | `context.state["customer_inquiry"] = inquiry_data` |
+| **Instruction&nbsp;참조** | `{top_intent}` | 전체: `{customer_inquiry}`<br>하위 필드: `{customer_inquiry.product_category}` |
+| **추천&nbsp;용도** | 최상위 라우팅 분기 기준 등 단일 플래그를 빠르게 참조할 때 | 추출할 파라미터가 많아질 때 변수가 난립(Variable Explosion)하는 것을 막고 관련 정보를 하나로 묶어 관리할 때 |
 
-#### GECX 웹 콘솔(UI) 등록 방법
+### 1-2 GECX 웹 콘솔(UI) 등록 방법
 좌측 메뉴 **Variables** ➔ **+ Add variable**을 클릭하여 아래 2개 변수를 등록합니다.
-
+![Variables-console](Variables-console.png)
 1. **`top_intent`**
    * **Type**: `Text`
    * **Description**: `고객 발화 맥락에서 분류된 최상위 인텐트 (Transfer, Card Payment, ASDefense)`
@@ -87,11 +88,11 @@ GECX에서는 단일 문자열을 담는 **`Text` (`STRING`)** 타입과 여러 
 ---
 
 ### 1-2. 파라미터 추출용 Python Tool 만들기 ([`record_intent_and_parameters.py`](./record_intent_and_parameters.py))
-
-GECX의 **Tools > Create Tool > Python**에서 `record_intent_and_parameters` 도구를 생성하고, [`record_intent_and_parameters.py`](./record_intent_and_parameters.py)의 코드를 붙여넣습니다.
+![tool-1.png](tool-1.png)
+CX Agent Studio의 **Tools > Create Tool > Python**에서 `record_intent_and_parameters` 도구를 생성하고, [`record_intent_and_parameters.py`](./record_intent_and_parameters.py)의 코드를 붙여넣습니다.
 
 * **핵심 원리**: 함수의 Docstring(`Args:` 설명)에 각 인텐트(`Transfer`, `Card Payment`, `ASDefense`)와 파라미터의 의미를 적어 두면, **Gemini LLM이 이 Docstring을 읽고 고객 발화에서 알맞은 값을 스스로 추출해 함수를 호출**합니다.
-* **주의사항 (`cxas lint` `T011` 규칙)**: 함수 인자 기본값에 `= None`을 쓰면 GECX 배포 시 도구가 무시될 수 있으므로, 반드시 **`str = ""`처럼 타입에 맞는 기본값**을 사용해야 합니다.
+* **주의사항**: 함수 인자 기본값에 `= None`을 쓰면 GECX 배포 시 도구가 무시될 수 있으므로, 반드시 **`str = ""`처럼 타입에 맞는 기본값**을 사용해야 합니다.
 
 ```python
 from typing import Any
