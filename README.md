@@ -6,7 +6,7 @@
 
 ## 리포지토리 파일 구성
 
-기존에 보유하고 계신 GECX(CXAS) 애플리케이션에 아래 2개의 파이썬 코드와 지침 가이드만 추가하면 바로 동작합니다.
+기존 GECX(CXAS) 애플리케이션에 아래 2개의 파이썬 코드와 지침 가이드를 적용하면 별도의 키워드 분기 로직 없이 즉시 동작합니다.
 
 | 파일명 | 설명 및 용도 |
 | :--- | :--- |
@@ -16,17 +16,19 @@
 
 ---
 
-## 개요: 고객 문의 배경과 핵심 해결책
+## 배경 및 아키텍처 패턴 개요
 
-### 1. 고객 문의 사항 (Before)
-> *"GECX에서는 Instruction만으로 파라미터(Variables)에 값을 바로 넣을 수 없고, 에이전트 콜백(Callback)에서 파이썬 코드로 넣어야 한다고 안내받았습니다. 그러면 `top_intent`를 분류하기 위해 파이썬 코드 안에 키워드(`if '요금' in text:`)를 일일이 넣어야 하나요? 키워드가 바뀔 때마다 코드를 계속 수정해야 하는지, 아니면 **Tool을 사용해서라도 LLM 기반으로 파라미터를 자동 추출하는 방법**이 있는지 궁금합니다."*
+### 1. 기존 접근 방식의 한계 (안티패턴: 콜백 내 키워드 하드코딩)
+DFCX(Playbooks)에서 GECX(CX Agent Studio)로 전환할 때 흔히 겪는 설계상의 오해는 **"Instruction만으로는 세션 변수(Variables)에 값을 직접 할당할 수 없으므로, 에이전트 콜백(Callback)에서 파이썬 조건문(`if '요금' in text:`)으로 키워드를 분기해 변수를 넣어야 한다"**고 접근하는 것입니다.
 
-![고객 문의 참고 이미지](./image.png)
+하지만 콜백 내부에 키워드 매칭 로직을 하드코딩하면 다음과 같은 한계가 발생합니다:
+* **유지보수 비용 증가**: 사용자 발화 표현이나 취급 품목·인텐트가 추가될 때마다 파이썬 코드를 지속적으로 수정·재배포해야 합니다.
+* **문맥 파악 불가**: 복합 문의나 우회적인 표현, 멀티턴 대화에서의 의도 전환을 단순 문자열 매칭(`in`)만으로는 정확히 분류할 수 없어 LLM의 자연어 이해(NLU) 역량을 전혀 활용하지 못합니다.
 
-### 2. 핵심 해답 (After)
-* **파이썬 콜백에 키워드를 하드코딩할 필요가 전혀 없습니다.** (키워드 분기 방식은 LLM의 자연어 이해 능력을 활용하지 못하는 안티패턴입니다.)
-* GECX의 권장 패턴인 **"LLM 함수 호출(Function Calling) + Python Setter Tool"** 방식을 사용하면, **Gemini LLM이 대화 맥락을 읽고 스스로 파라미터를 추론하여 Tool 인자로 전달**하고, Tool은 단 몇 줄의 코드로 세션 상태(`context.state`)에 값을 기록합니다.
-* 더 나아가, 사전에 선언된 변수뿐만 아니라 **세션 `context.state`의 기존 정보나 백엔드 API로 조회한 청구서 금액 등도 스키마 수정 없이 동적으로 추가(Merge)**할 수 있습니다.
+### 2. GECX 권장 아키텍처 패턴 (LLM Function Calling + Python Setter Tool)
+* **파이썬 콜백에 키워드를 하드코딩할 필요가 전혀 없습니다.**
+* GECX의 표준 권장 패턴인 **"LLM 함수 호출(Function Calling) + Python Setter Tool"** 방식을 사용하면, **Gemini LLM이 대화 맥락을 읽고 스스로 인텐트와 파라미터를 추론하여 Tool 인자로 전달**하고, Tool은 단 몇 줄의 코드로 세션 상태(`context.state`)에 값을 기록합니다.
+* 나아가 사전에 선언된 변수뿐만 아니라, **세션 `context.state`의 기존 컨텍스트 정보나 백엔드 API로 조회한 실시간 응답값(청구 금액 등)도 `app.json` 스키마 수정 없이 동적으로 병합(`Merge`)**할 수 있습니다.
 
 ### 3. 한눈에 보는 3단계 적용 로드맵
 
@@ -245,11 +247,11 @@ sequenceDiagram
 
 ## Step 3. [확장] 스키마 수정 없이 Tool에서 `context.state` 및 API 응답값 동적 병합 (`Merge`)
 
-세 번째 단계는 **"사전에 `app.json`에 선언해 둔 4개 필드 외에, 상담 도중 Tool에서 원하는 `context.state` 변수나 API로 받아온 결과값(청구서 총액 등)을 동적으로 `customer_inquiry`에 추가할 수 있는가?"**에 대한 구현 방법입니다.
+세 번째 단계는 **사전에 `app.json`에 선언해 둔 4개 기본 필드 외에, 상담 진행 과정에서 `context.state`의 기존 세션 정보나 백엔드 API 응답값(청구서 총액, 납부기한 등)을 동적으로 `customer_inquiry`에 확장·병합하는 방법**입니다.
 
-### 3-1. 결론: `app.json` 스키마 수정 없이 100% 동적 추가 가능!
+### 3-1. 결론: `app.json` 스키마 수정 없이 100% 동적 추가 가능
 * `app.json`의 `customer_inquiry`에는 기본 4개 필드(`intent`, `product_category`, `symptom_or_request`, `requested_action`)만 그대로 두어도 됩니다.
-* Python Tool 코드 안에서 기존 `context.state.get("customer_inquiry")` 딕셔너리를 읽어와 **새로운 키-값을 병합(`.update()`)하여 다시 `context.state["customer_inquiry"]`에 넣어주면**, GECX 런타임과 콘솔 시뮬레이터(`Variables` 패널)에 모든 동적 필드가 즉시 반영됩니다.
+* Python Tool 코드 안에서 기존 `context.state.get("customer_inquiry")` 딕셔너리를 읽어와 **새로운 키-값을 병합(`.update()`)하여 다시 `context.state["customer_inquiry"]`에 저장하면**, GECX 런타임과 콘솔 시뮬레이터(`Variables` 패널)에 모든 동적 필드가 즉시 반영됩니다.
 
 ```mermaid
 flowchart TB
@@ -258,7 +260,7 @@ flowchart TB
     end
 
     subgraph Merge1["2. record_intent_and_parameters 실행 시 동적 추가"]
-        C1["context.state에서 자동 병합:\n+ customer_name ('홍길동')\n+ account_id ('urn:coway:...')\n+ auth_status ('authenticated')"]
+        C1["context.state에서 자동 병합:\n+ customer_name ('홍길동')\n+ account_id ('acct-100204')\n+ auth_status ('authenticated')"]
     end
 
     subgraph Merge2["3. 빌링 API Tool (get_invoice_breakdown 등) 실행 시 동적 추가"]
@@ -272,7 +274,7 @@ flowchart TB
 
 병렬 도구 실행(`"toolExecutionMode": "PARALLEL"`)이나 멀티턴 대화에서 여러 Tool이 `customer_inquiry`를 수정할 때, 이전에 기록된 필드가 사라지지 않도록 반드시 **`dict(context.state.get("customer_inquiry") or {})`로 기존 값을 복사한 뒤 `.update()`로 병합**합니다.
 
-고객의 기존 API 조회 Tool 코드 하단에 아래 헬퍼 함수를 복사해 넣고, API 응답 반환(`return`) 직전에 호출하기만 하면 됩니다:
+기존 API 조회 Tool 코드 하단에 아래 헬퍼 함수를 추가하고, API 응답 반환(`return`) 직전에 호출하기만 하면 됩니다:
 
 ```python
 def _sync_inquiry_with_api_data(**api_fields: Any) -> None:
@@ -322,7 +324,7 @@ _sync_inquiry_with_api_data(
     "symptom_or_request": "비데 렌탈료 청구 내역 확인",
     "requested_action": "이번 달 청구서 확인",
     "customer_name": "홍길동",
-    "account_id": "urn:coway:rental:product:ban:115720204",
+    "account_id": "acct-100204",
     "auth_status": "authenticated",
     "billing_month": "2026년 3월",
     "invoice_total": "5,370원",
@@ -341,7 +343,7 @@ _sync_inquiry_with_api_data(
     "symptom_or_request": "비데 렌탈료 청구 내역 확인",
     "requested_action": "이번 달 청구서 확인",
     "customer_name": "홍길동",
-    "account_id": "urn:coway:rental:product:ban:115720204",
+    "account_id": "acct-100204",
     "auth_status": "authenticated",
     "billing_month": "2026년 3월",
     "invoice_total": "0원",
@@ -350,55 +352,3 @@ _sync_inquiry_with_api_data(
   }
 }
 ```
-
----
-
-## Step 4. 실시간 변수 확인 방법 & 실전 트러블슈팅 노하우
-
-### 4-1. 실시간으로 변수 값을 확인하는 2가지 방법
-
-1. **GECX 웹 콘솔 (Test Agent 시뮬레이터 UI)**
-   * 우측 **Test Agent** 창 상단의 **`Variables` (`{x}`) 패널**을 열어 두면 매 턴 대화가 진행될 때마다 `top_intent`와 `customer_inquiry` 내부의 값들이 실시간으로 바뀌는 것을 눈으로 바로 확인할 수 있습니다.
-   * 또는 채팅창에 표시되는 도구 호출 배지(`record_intent_and_parameters`, `get_invoice_breakdown`)를 클릭하면 해당 단계에서 갱신된 `updatedVariables` JSON을 볼 수 있습니다.
-2. **`cxas-scrapi` (Python SDK)로 자동 추출 및 검증**
-   * `Sessions.run()` 실행 결과의 `diagnosticInfo.messages[].chunks[].updatedVariables`에서 매 턴 변경된 세션 변수를 추출할 수 있습니다.
-   ```python
-   from google.protobuf.json_format import MessageToDict
-   from cxas_scrapi.core.sessions import Sessions
-
-   s = Sessions(app_name="projects/<PROJECT_ID>/locations/us/apps/<APP_ID>")
-   res = s.run(session_id="test-session-001", text="집에서 쓰는 비데 렌탈료가 이번 달에 얼마 청구됐는지 상세 내역 좀 확인해 주세요.")
-
-   for out in res.outputs:
-       diag = MessageToDict(out._pb).get("diagnosticInfo", {})
-       for msg in diag.get("messages", []):
-           for chunk in msg.get("chunks", []):
-               if "updatedVariables" in chunk:
-                   print("실시간 업데이트 변수:", chunk["updatedVariables"])
-   ```
-
----
-
-### 4-2. 실전 구현 시 꼭 알아야 할 4가지 주의사항 (트러블슈팅 요약)
-
-| 번호 | 발생하기 쉬운 현상 | 원인 | 해결 방법 (Best Practice) |
-| :---: | :--- | :--- | :--- |
-| **1** | Python Tool 배포 후 에이전트가 도구를 호출하지 못하거나 Lint 에러 발생 | 함수 선택 인자에 `product_category: str = None`처럼 `None` 기본값 사용 (`cxas lint` `T011` 위반) | 모든 선택 인자는 반드시 **`str = ""`처럼 타입과 일치하는 기본값**으로 선언 |
-| **2** | 변수 기록 후 같은 턴에서 `billing_agent` 호전환이나 상담원 에스컬레이션(`set_session_state`)을 안 하고 안내 멘트만 출력 후 멈춤 | LLM이 도구 호출 1회 후 텍스트 답변을 먼저 생성하면서 턴을 종료함 | • 지침에서 **"절대 안내 텍스트만 출력하고 멈추지 말고, 반드시 도구를 먼저 호출한 뒤 안내할 것"**을 1순위로 배치<br>• `record_intent_and_parameters`의 반환값 `agent_action`에도 즉시 호전환/에스컬레이션 호출 지시를 명시 |
-| **3** | 멀티턴 대화(예: 1턴 명의변경 `Transfer` ➔ 2턴 요금 조회 `Card Payment`)에서 `Root agent`가 변수 갱신을 건너뛰고 바로 `billing_agent`로 호전환함 | 1턴 히스토리에 이미 `record_intent_and_parameters` 호출 이력이 있어 LLM이 2턴에서 생략함 | • `Root agent` 지침에 멀티턴 주제 변경 시에도 반드시 `record_intent_and_parameters` 선행 호출 명시<br>• **`billing_agent` 진입 시 `{top_intent}`가 `"Card Payment"`가 아니면 `billing_agent`가 직접 `record_intent_and_parameters`를 병렬(`PARALLEL`) 호출하는 이중 안전장치(Fallback Sync)** 적용 |
-| **4** | `app.json`에 선언되지 않은 동적 필드를 Instruction에서 `{customer_inquiry.invoice_total}`처럼 점(`.`) 표기법으로 참조하면 `cxas lint` `V104` 에러 발생 | Linter가 점(`.`) 표기법은 `app.json`에 선언된 하위 속성인지 검사함 | • 동적 필드를 사용할 때는 `app.json`을 그대로 두고 Instruction의 `<context>`에 상위 객체 **`{customer_inquiry}` 전체를 참조**하면 모든 동적 키-값이 JSON 형태로 프롬프트에 자동 주입되며 Lint도 통과함 |
-
----
-
-### 4-3. 대표 시나리오 검증 요약표 (`5/5 PASS`)
-
-| 시나리오 | 턴 | 사용자 입력 발화 | 에이전트 전환 | 호출된 도구 (`tool_calls`) | 실시간 기록 변수 (`updatedVariables.customer_inquiry` 주요 값) | 판정 |
-| :--- | :---: | :--- | :---: | :--- | :--- | :---: |
-| **1. 비데 요금 상세 및 일련번호 조회** | 1턴 | `"집에서 쓰는 비데 렌탈료가 이번 달에 얼마 청구됐는지 상세 내역 좀 확인해 주세요."` | `Root` ➔ `billing_agent` | `record_intent_and_parameters`<br>`get_invoice_breakdown(month="latest", line="")` | 기본 4필드(`Card Payment`, `비데`) +<br>`customer_name`: `"홍길동"`, `account_id`: `"...115720204"` +<br>**`billing_month`: `"2026년 3월"`, `invoice_total`: `"5,370원"`, `payment_due`: `"2026년 4월 14일"`, `queried_product`: `"전체 계정 (048, 703, 843)"`** | **PASS** |
-| **1. 비데 요금 상세 및 일련번호 조회** | 2턴 | `"703번이요."` | `billing_agent` 유지 | `get_invoice_breakdown(month="latest", line="703")` | 기존 필드 유지 + **`invoice_total`: `"0원"`, `queried_product`: `"일련번호 끝자리 703"`** 동적 업데이트 | **PASS** |
-| **2. 요금 비교 후 AS 수리 전환** | 1턴 | `"이번 달 요금이 지난달보다 왜 더 많이 빠져나갔는지 비교해서 설명해 주세요."` | `Root` ➔ `billing_agent` | `record_intent_and_parameters`<br>`compare_invoices(month="latest", compare_to="previous")` | 기본 4필드 + `customer_name`: `"홍길동"` +<br>**`billing_month`: `"2026년 3월"`, `invoice_total`: `"5,370원"`, `previous_invoice_total`: `"-1,790원"`, `invoice_diff`: `"7,160원 (higher)"`** | **PASS** |
-| **2. 요금 비교 후 AS 수리 전환** | 2턴 | `"아 요금 내역은 이해됐습니다. 그런데 제가 쓰는 얼음정수기에서 어제부터 냉수가 전혀 안 나오는데 기사님 방문 수리 신청할게요."` | `billing_agent` ➔ **`Root agent`** | `record_intent_and_parameters`<br>`set_session_state(_action_trigger="escalate", _escalation_topic="general")` | `top_intent`: **`"ASDefense"`** *(실시간 변경)* +<br>1턴에 기록된 API 청구서 필드(`invoice_total`: `"5,370원"` 등)가 손실 없이 보존(Merge)되면서 `intent: "ASDefense"`, `product_category: "얼음정수기"`로 갱신 | **PASS** |
-| **3. 결제 카드 변경 보안 에스컬레이션** | 1턴 | `"정수기 렌탈료 자동이체 걸어둔 신한카드를 분실해서 재발급받았거든요. 결제 카드를 새 카드로 변경하고 싶어요."` | `Root` ➔ `billing_agent` | `record_intent_and_parameters`<br>`set_session_state(_action_trigger="escalate", _escalation_topic="billing")` | 기본 4필드(`Card Payment`, `정수기`, `결제 카드 변경`) +<br>**`customer_name`: `"홍길동"`, `account_id`: `"...115720204"`, `auth_status`: `"authenticated"`** + `_action_trigger`: `"escalate"` | **PASS** |
-| **4. 미납/연체 복합 조회** | 1턴 | `"지난달에 통장 잔고가 부족해서 렌탈료가 미납된 것 같은데, 미납된 금액이 있는지 확인 좀 해주세요."` | `Root` ➔ `billing_agent` | `record_intent_and_parameters`<br>`lookup_customer`<br>`get_invoice_breakdown(month="previous", line="")` | 기본 4필드 + `customer_name`: `"홍길동"` +<br>**`overdue_balance`: `"0원"`, `service_status`: `"active"`, `billing_month`: `"2026년 2월"`, `invoice_total`: `"-1,790원"`, `payment_due`: `"2026년 3월 18일"`** | **PASS** |
-| **5. 명의변경 문의 ➔ 요금 조회 전환** | 1턴 | `"제가 쓰던 공기청정기를 동생한테 물려주려고 하는데 계약자 명의변경하려면 필요한 서류가 뭔가요?"` | `Root agent` 유지 | `record_intent_and_parameters` | 기본 4필드(`Transfer`, `공기청정기`, `구비서류 안내`) +<br>**`customer_name`: `"홍길동"`, `account_id`: `"...115720204"`, `auth_status`: `"authenticated"`** | **PASS** |
-| **5. 명의변경 문의 ➔ 요금 조회 전환** | 2턴 | `"네 알겠습니다. 그러면 명의 넘기기 전에 이번 달 제 청구서에 요금이 총 얼마 나왔는지도 한번 봐주시겠어요?"` | `Root` ➔ **`billing_agent`** | `record_intent_and_parameters`<br>`get_invoice_breakdown(month="latest", line="")` | `top_intent`: **`"Card Payment"`** *(기존 `"Transfer"`에서 변경)* +<br>**`billing_month`: `"2026년 3월"`, `invoice_total`: `"5,370원"`, `payment_due`: `"2026년 4월 14일"`, `queried_product`: `"전체 계정 (048, 703, 843)"`** 동적 병합 | **PASS** |

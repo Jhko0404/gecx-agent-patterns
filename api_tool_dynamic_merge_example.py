@@ -1,7 +1,7 @@
 """GECX (CX Agent Studio) — 기존 API 조회 Tool에서 응답 데이터를 customer_inquiry에 동적 병합하는 예제.
 
 [적용 방법]
-고객이 이미 보유하고 있는 CXAS 애플리케이션의 API 조회 Tool(예: 청구서 조회, 요금 비교, 고객 정보 조회 등)
+기존에 구성된 CXAS 애플리케이션의 API 조회 Tool(예: 청구서 조회, 요금 비교, 고객 정보 조회 등)
 파이썬 코드 내에 아래 `_sync_inquiry_with_api_data()` 헬퍼 함수를 추가하고,
 API 응답(return 직전)에서 원하는 필드들을 넘겨 호출하면 `app.json` 스키마 수정 없이
 `customer_inquiry` 세션 변수에 실시간으로 병합(Merge)됩니다.
